@@ -26,6 +26,12 @@ runs:
         set -euxo pipefail
         rm -rf komari-web
         git clone --depth=1 "${{ inputs.repository }}" komari-web
+        # The frontend generates Agent installation commands. Keep them aligned
+        # with this monorepo, where the Agent scripts live under komari-agent/.
+        OLD_AGENT_RAW_URL="https://raw.githubusercontent.com/komari-monitor/komari-agent/refs/heads/main/"
+        NEW_AGENT_RAW_URL="https://raw.githubusercontent.com/ctfox66/my-tz-kori/refs/heads/master/komari-agent/"
+        grep -RIl --exclude-dir=node_modules --exclude-dir=.git "$OLD_AGENT_RAW_URL" komari-web \
+          | xargs -r sed -i "s#${OLD_AGENT_RAW_URL}#${NEW_AGENT_RAW_URL}#g"
         cd komari-web
         npm install
         npm run build
