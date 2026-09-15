@@ -4,7 +4,7 @@ description: Build the pinned 1.2.5-fix2 frontend source and optionally upload i
 inputs:
   node-version:
     description: Node.js version used to build komari-web.
-    default: "23"
+    default: "22"
   artifact-name:
     description: Optional artifact name for the packed frontend theme.
     default: ""
@@ -22,7 +22,7 @@ runs:
       run: |
         set -euxo pipefail
         cd komari-web
-        npm install
+        npm install --no-audit --no-fund --legacy-peer-deps
 
     - name: Build pinned frontend
       shell: bash
