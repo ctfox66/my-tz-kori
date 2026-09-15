@@ -20,29 +20,18 @@ runs:
       with:
         node-version: ${{ inputs.node-version }}
 
-    - name: Clone and build frontend
+    - name: Use pinned frontend theme
       shell: bash
       run: |
         set -euxo pipefail
-        rm -rf komari-web
-        git clone --depth=1 "${{ inputs.repository }}" komari-web
-        # The frontend generates Agent installation commands. Keep them aligned
-        # with this monorepo, where the Agent scripts live under komari-agent/.
+        test -f komari/web/public/defaultTheme/dist/index.html
+        test -f komari/web/public/defaultTheme/komari-theme.json
+        # Keep the frontend from the official 1.2.5-fix2 image fixed in this
+        # repository instead of rebuilding whatever komari-web currently has.
         OLD_AGENT_RAW_URL="https://raw.githubusercontent.com/komari-monitor/komari-agent/refs/heads/main/"
         NEW_AGENT_RAW_URL="https://raw.githubusercontent.com/ctfox66/my-tz-kori/refs/heads/master/komari-agent/"
-        grep -RIl --exclude-dir=node_modules --exclude-dir=.git "$OLD_AGENT_RAW_URL" komari-web \
+        grep -RIl --exclude-dir=.git "$OLD_AGENT_RAW_URL" komari/web/public/defaultTheme \
           | xargs -r sed -i "s#${OLD_AGENT_RAW_URL}#${NEW_AGENT_RAW_URL}#g"
-        cd komari-web
-        npm install
-        npm run build
-        cd ..
-
-        mkdir -p komari/web/public/defaultTheme/dist
-        rm -rf komari/web/public/defaultTheme/dist/*
-        cp -r komari-web/dist/* komari/web/public/defaultTheme/dist/
-        cp -f komari-web/komari-theme.json komari/web/public/defaultTheme/
-        if [ -f komari-web/preview.png ]; then cp -f komari-web/preview.png komari/web/public/defaultTheme/; fi
-        if [ -f komari-web/perview.png ]; then cp -f komari-web/perview.png komari/web/public/defaultTheme/; fi
         if [ -f komari/web/public/defaultTheme/preview.png ] && [ ! -f komari/web/public/defaultTheme/perview.png ]; then cp -f komari/web/public/defaultTheme/preview.png komari/web/public/defaultTheme/perview.png; fi
         if [ -f komari/web/public/defaultTheme/perview.png ] && [ ! -f komari/web/public/defaultTheme/preview.png ]; then cp -f komari/web/public/defaultTheme/perview.png komari/web/public/defaultTheme/preview.png; fi
 
