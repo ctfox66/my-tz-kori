@@ -521,8 +521,9 @@ const PingChart = ({ uuid }: { uuid: string }) => {
                   </div>
                   <div className="flex gap-2 text-sm text-muted-foreground">
                     <span>
-                      {task.value !== null
-                        ? `${Number(task.value).toFixed(0)} ms`
+                      {(hours <= 1 ? task.value : task.avg) !== null &&
+                      (hours <= 1 ? task.value : task.avg) !== undefined
+                        ? `${Number(hours <= 1 ? task.value : task.avg).toFixed(0)} ms`
                         : "-"}
                     </span>
                     <span>
