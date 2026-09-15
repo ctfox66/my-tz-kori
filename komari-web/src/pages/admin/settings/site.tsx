@@ -138,11 +138,11 @@ export default function SiteSettings() {
         }}
       />
       <SettingCardSwitch
-        title={t("settings.site.cors_origin_check_enabled")}
-        description={t("settings.site.cors_origin_check_enabled_description")}
-        defaultChecked={settings.cors_origin_check_enabled ?? true}
+        title={t("settings.site.cros")}
+        description={t("settings.site.cros_description")}
+        defaultChecked={settings.allow_cors}
         onChange={async (checked) => {
-          await updateSettingsWithToast({ cors_origin_check_enabled: checked }, t);
+          await updateSettingsWithToast({ allow_cors: checked }, t);
         }}
       />
       <SettingCardLongTextInput

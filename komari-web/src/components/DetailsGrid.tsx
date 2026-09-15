@@ -1,39 +1,24 @@
 import { useTranslation } from "react-i18next";
 import { UpDownStack } from "./UpDownStack";
-import {
-  useNodeList,
-  type NodeBasicInfo,
-} from "@/contexts/NodeListContext";
+import { useNodeList } from "@/contexts/NodeListContext";
 import { useLiveData } from "@/contexts/LiveDataContext";
 import { formatUptime } from "./Node";
 import { formatBytes } from "@/utils/unitHelper";
 import { Flex, Text, Card } from "@radix-ui/themes";
-import type { Record as LiveRecord } from "@/types/LiveData";
 
 type DetailsGridProps = {
   uuid: string;
   gap?: string;
   box?: boolean;
   align?: "start" | "center" | "end";
-  node?: NodeBasicInfo;
-  liveRecord?: LiveRecord;
 };
 
-export const DetailsGrid = ({
-  uuid,
-  gap,
-  box,
-  align,
-  node: nodeProp,
-  liveRecord,
-}: DetailsGridProps) => {
+export const DetailsGrid = ({ uuid, gap, box, align }: DetailsGridProps) => {
   const { t } = useTranslation();
 
-  const nodeListContext = useNodeList(false);
+  const { nodeList } = useNodeList();
   const { live_data } = useLiveData();
-  const node =
-    nodeProp ?? nodeListContext?.nodeList?.find((n) => n.uuid === uuid);
-  const currentRecord = liveRecord ?? live_data?.data.data[uuid ?? ""];
+  const node = nodeList?.find((n) => n.uuid === uuid);
 
   const Container: any = box ? Card : 'div';
 
@@ -69,25 +54,25 @@ export const DetailsGrid = ({
           className="md:w-64 w-full flex-[0_0_calc(50%-0.5rem)]"
           up={t("nodeCard.networkSpeed")}
           down={` ↑ ${formatBytes(
-            currentRecord?.network.up || 0
+            live_data?.data.data[uuid ?? ""]?.network.up || 0
           )}/s
           ↓
           ${formatBytes(
-            currentRecord?.network.down || 0
+            live_data?.data.data[uuid ?? ""]?.network.down || 0
           )}/s`}
         />
         <UpDownStack
           up={t("nodeCard.totalTraffic")}
           align={align === "center" ? "end" : "start"}
           className="flex-[0_0_calc(50%-0.5rem)]"
-            down={`↑
+          down={`↑
           ${formatBytes(
-              currentRecord?.network.totalUp || 0
-            )}
+            live_data?.data.data[uuid ?? ""]?.network.totalUp || 0
+          )}
           ↓
           ${formatBytes(
-              currentRecord?.network.totalDown || 0
-            )}`}
+            live_data?.data.data[uuid ?? ""]?.network.totalDown || 0
+          )}`}
         />
         <UpDownStack
           className="md:w-70 w-full flex-[0_0_calc(50%-0.5rem)]"
@@ -110,8 +95,8 @@ export const DetailsGrid = ({
           up={t("nodeCard.uptime")}
           className="flex-[0_0_calc(50%-0.5rem)]"
           down={
-            currentRecord?.uptime
-              ? formatUptime(currentRecord.uptime, t)
+            live_data?.data.data[uuid ?? ""]?.uptime
+              ? formatUptime(live_data?.data.data[uuid ?? ""]?.uptime, t)
               : "-"
           }
         />
@@ -123,7 +108,7 @@ export const DetailsGrid = ({
             <Text size="2">
               {node?.updated_at
                 ? new Date(
-                  currentRecord?.updated_at ||
+                  live_data?.data.data[uuid ?? ""]?.updated_at ||
                   node.updated_at
                 ).toLocaleString()
                 : "-"}

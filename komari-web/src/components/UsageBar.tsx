@@ -40,10 +40,8 @@ const UsageBar = React.memo(
                 height: "100%",
                 backgroundColor: `var(--${barColor}-9)`,
                 borderRadius: "3px",
-                width: "100%",
-                transform: `scaleX(${clampedValue / 100})`,
-                transformOrigin: "left center",
-                transition: "transform 0.5s ease-out",
+                width: `${clampedValue}%`,
+                transition: "width 0.5s ease-out",
               }}
             />
           </Box>
@@ -78,10 +76,8 @@ const UsageBar = React.memo(
               height: "100%",
               backgroundColor: `var(--${barColor}-9)`,
               borderRadius: "4px",
-              width: "100%",
-              transform: `scaleX(${clampedValue / 100})`,
-              transformOrigin: "left center",
-              transition: "transform 0.5s ease-out",
+              width: `${clampedValue}%`,
+              transition: "width 0.5s ease-out",
             }}
           />
         </Box>

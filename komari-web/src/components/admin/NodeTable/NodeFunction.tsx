@@ -6,7 +6,6 @@ import { Trash2, Copy, Download, DollarSign } from "lucide-react";
 import { t } from "i18next";
 import type { Row } from "@tanstack/react-table";
 import { EditDialog } from "./NodeEditDialog";
-import { quotePowerShellArg, quoteShellArgs } from "@/utils/shellQuote";
 import {
   Button,
   Checkbox,
@@ -26,6 +25,7 @@ async function removeClient(uuid: string) {
 }
 
 type InstallOptions = {
+  disableWebSsh: boolean;
   disableAutoUpdate: boolean;
   ignoreUnsafeCert: boolean;
   ghproxy: string;
@@ -41,6 +41,7 @@ export function ActionsCell({ row }: { row: Row<z.infer<typeof schema>> }) {
   const [selectedPlatform, setSelectedPlatform] =
     React.useState<Platform>("linux");
   const [installOptions, setInstallOptions] = React.useState<InstallOptions>({
+    disableWebSsh: false,
     disableAutoUpdate: false,
     ignoreUnsafeCert: false,
     ghproxy: "",
@@ -50,32 +51,32 @@ export function ActionsCell({ row }: { row: Row<z.infer<typeof schema>> }) {
 
   const generateCommand = () => {
     const host = window.location.origin;
-    const token = row.original.token ?? "";
-    const args: string[] = ["-e", host, "-t", token];
+    const token = row.original.token;
+    let args = ["-e", host, "-t", token];
     // 根据安装选项生成参数
+    if (installOptions.disableWebSsh) {
+      args.push("--disable-web-ssh");
+    }
     if (installOptions.disableAutoUpdate) {
       args.push("--disable-auto-update");
     }
     if (installOptions.ignoreUnsafeCert) {
       args.push("--ignore-unsafe-cert");
     }
-    const ghproxy = installOptions.ghproxy.trim();
-    if (ghproxy) {
-      const finalGhproxy = ghproxy.startsWith("http")
-        ? ghproxy
-        : `http://${ghproxy}`;
+    if (installOptions.ghproxy) {
+      if (!installOptions.ghproxy.startsWith("http")) {
+        installOptions.ghproxy = `http://${installOptions.ghproxy}`;
+      }
       args.push(`--install-ghproxy`);
-      args.push(finalGhproxy);
+      args.push(installOptions.ghproxy);
     }
-    const installDir = installOptions.dir.trim();
-    if (installDir) {
+    if (installOptions.dir) {
       args.push(`--install-dir`);
-      args.push(installDir);
+      args.push(installOptions.dir);
     }
-    const serviceName = installOptions.serviceName.trim();
-    if (serviceName) {
+    if (installOptions.serviceName) {
       args.push(`--install-service-name`);
-      args.push(serviceName);
+      args.push(installOptions.serviceName);
     }
 
     let finalCommand = "";
@@ -83,7 +84,7 @@ export function ActionsCell({ row }: { row: Row<z.infer<typeof schema>> }) {
       case "linux":
         finalCommand =
           `wget -qO- https://raw.githubusercontent.com/ctfox66/my-tz-kori/refs/heads/master/komari-agent/install.sh | sudo bash -s -- ` +
-          quoteShellArgs(args);
+          args.join(" ");
         break;
       case "windows":
         finalCommand =
@@ -92,14 +93,14 @@ export function ActionsCell({ row }: { row: Row<z.infer<typeof schema>> }) {
           ` -UseBasicParsing -OutFile 'install.ps1'; &` +
           ` '.\\install.ps1'`;
         args.forEach((arg) => {
-          finalCommand += ` ${quotePowerShellArg(arg)}`;
+          finalCommand += ` '${arg}'`;
         });
         finalCommand += `"`;
         break;
       case "macos":
         finalCommand =
-          `zsh <(curl -sL https://raw.githubusercontent.com/ctfox66/my-tz-kori/refs/heads/master/komari-agent/install.sh) ` +
-          quoteShellArgs(args);
+            `zsh <(curl -sL https://raw.githubusercontent.com/ctfox66/my-tz-kori/refs/heads/master/komari-agent/install.sh) ` +
+            args.join(" ");
         break;
     }
     return finalCommand;

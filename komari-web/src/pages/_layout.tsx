@@ -2,6 +2,7 @@ import { LiveDataProvider } from "@/contexts/LiveDataContext";
 import Footer from "../components/Footer";
 import NavBar from "../components/NavBar";
 import { Outlet } from "react-router-dom";
+import { NodeListProvider } from "@/contexts/NodeListContext";
 import { usePublicInfo } from "@/contexts/PublicInfoContext";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -46,7 +47,9 @@ const IndexLayout = () => {
 
   return (
     <LiveDataProvider>
-      <InnerLayout />
+      <NodeListProvider>
+        <InnerLayout />
+      </NodeListProvider>
     </LiveDataProvider>
   );
 };

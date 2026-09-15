@@ -19,9 +19,8 @@ import {
   Palette,
   Code,
   Globe,
-  Database
+  Terminal
 } from "lucide-react";
-
 
 // Map icon names defined in menuConfig.json to their components
 export const iconMap: Record<string, React.ComponentType<any>> = {
@@ -44,6 +43,5 @@ export const iconMap: Record<string, React.ComponentType<any>> = {
   Palette,
   Code,
   Globe,
-  Database,
+  Terminal,
 };
-

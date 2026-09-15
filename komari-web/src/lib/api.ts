@@ -8,10 +8,9 @@ import { toast } from "sonner";
 export interface SettingsResponse {
   sitename: string;
   description: string;
-  cors_origin_check_enabled: boolean;
+  allow_cors: boolean;
   geo_ip_enabled: boolean;
   geo_ip_provider: string;
-  low_resource_mode: boolean;
   o_auth_provider: string;
   o_auth_enabled: boolean;
   custom_head: string;
@@ -125,10 +124,9 @@ export function useSettings() {
   const [settings, setSettings] = React.useState<SettingsResponse>({
     sitename: "",
     description: "",
-    cors_origin_check_enabled: true,
+    allow_cors: false,
     geo_ip_enabled: false,
     geo_ip_provider: "",
-    low_resource_mode: false,
     o_auth_provider: "",
     o_auth_enabled: false,
     custom_head: "",
@@ -136,7 +134,7 @@ export function useSettings() {
     UpdatedAt: "",
   });
 
-  const [loading, setLoading] = React.useState(true);
+  const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   // Fetch settings on mount

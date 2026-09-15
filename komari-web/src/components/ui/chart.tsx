@@ -229,7 +229,7 @@ function ChartTooltipContent({
                       {itemConfig?.label || item.name}
                     </span>
                   </div>
-                  {item.value !== undefined && item.value !== null && (
+                  {item.value && (
                     <span className="text-foreground font-mono font-medium tabular-nums">
                       {formatter
                         ? formatter(
