@@ -1,9 +1,10 @@
 name: Publish Docker Image on Main
 
 on:
-  #push:
-  #  branches:
-  #    - main
+  push:
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 env:
