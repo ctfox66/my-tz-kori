@@ -335,6 +335,12 @@ func GetDBInstance() *gorm.DB {
 			instance.Exec("CREATE INDEX IF NOT EXISTS idx_gpu_record_client_time ON gpu_records(client, time)")
 			instance.Exec("CREATE INDEX IF NOT EXISTS idx_gpu_record_lt_client_time ON gpu_records_long_term(client, time)")
 			instance.Exec("CREATE INDEX IF NOT EXISTS idx_ping_record_client_time ON ping_records(client, time)")
+			// 覆盖索引：历史图表查询只涉及 client / time / task_id / value。
+			// 只有 (client, time) 索引时，SQLite 需按 rowid 逐行回表，5k+ 行会产生大量随机页读取，
+			// 冷缓存下 12 小时查询需要数秒；覆盖索引可让查询完全走索引，避免回表。
+			if err := instance.Exec("CREATE INDEX IF NOT EXISTS idx_ping_records_cover ON ping_records(client, time, task_id, value)").Error; err != nil {
+				log.Printf("Failed to create covering index idx_ping_records_cover: %v", err)
+			}
 		}
 
 	})
