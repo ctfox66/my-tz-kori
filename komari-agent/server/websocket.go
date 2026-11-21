@@ -37,7 +37,8 @@ func EstablishWebSocketConnection() {
 		resetConnectionProtocolVersion()
 	}()
 	var err error
-	interval := math.Max(1, flags.Interval-1)
+	// 采集不再阻塞（CPU / 网速改为基于两次快照差值计算），因此不再需要 -1 秒的补偿。
+	interval := math.Max(1, flags.Interval)
 
 	dataTicker := time.NewTicker(time.Duration(interval * float64(time.Second)))
 	defer dataTicker.Stop()

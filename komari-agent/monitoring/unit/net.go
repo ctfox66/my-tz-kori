@@ -12,15 +12,20 @@ import (
 )
 
 func ConnectionsCount() (tcpCount, udpCount int, err error) {
-	tcps, err := net.Connections("tcp")
-	if err != nil {
-		return 0, 0, fmt.Errorf("failed to get TCP connections: %w", err)
+	tcpCount, udpCount, err = connectionsFromProc()
+	if err == nil {
+		return tcpCount, udpCount, nil
 	}
-	udps, err := net.Connections("udp")
-	if err != nil {
-		return 0, 0, fmt.Errorf("failed to get UDP connections: %w", err)
+	// Fall back to gopsutil when /proc is unavailable (e.g. non-Linux hosts)
+	// or when the agent runs inside a container without host procfs.
+	tcps, tcpErr := net.Connections("tcp")
+	if tcpErr != nil {
+		return 0, 0, fmt.Errorf("failed to get TCP connections: %w", tcpErr)
 	}
-
+	udps, udpErr := net.Connections("udp")
+	if udpErr != nil {
+		return 0, 0, fmt.Errorf("failed to get UDP connections: %w", udpErr)
+	}
 	return len(tcps), len(udps), nil
 }
 
@@ -169,52 +174,55 @@ func NetworkSpeed() (totalUp, totalDown, upSpeed, downSpeed uint64, err error) {
 }
 
 func getNetworkSpeedFallback(includeNics, excludeNics map[string]struct{}) (totalUp, totalDown, upSpeed, downSpeed uint64, err error) {
-	// 获取第一次网络IO计数器
-	ioCounters1, err := net.IOCounters(true)
+	// 取一次网络计数器快照，并与上一次快照做差计算速率。
+	// 旧实现会在两次采样之间固定 sleep 1 秒，导致每次采集阻塞 1 秒；
+	// 现在改为基于时间差的增量计算，单次调用不再阻塞。
+	ioCounters, err := net.IOCounters(true)
 	if err != nil {
 		return 0, 0, 0, 0, fmt.Errorf("failed to get network IO counters: %w", err)
 	}
 
-	if len(ioCounters1) == 0 {
+	if len(ioCounters) == 0 {
 		return 0, 0, 0, 0, fmt.Errorf("no network interfaces found")
 	}
 
-	// 统计第一次所有非回环接口的流量
-	var totalUp1, totalDown1 uint64
-	for _, interfaceStats := range ioCounters1 {
+	var currentUp, currentDown uint64
+	for _, interfaceStats := range ioCounters {
 		if shouldInclude(interfaceStats.Name, includeNics, excludeNics) {
-			totalUp1 += interfaceStats.BytesSent
-			totalDown1 += interfaceStats.BytesRecv
+			currentUp += interfaceStats.BytesSent
+			currentDown += interfaceStats.BytesRecv
 		}
 	}
 
-	// 等待1秒
-	time.Sleep(time.Second)
+	now := time.Now()
+	nicSpeedTracker.mu.Lock()
+	prevUp, prevDown, prevAt, primed := nicSpeedTracker.up, nicSpeedTracker.down, nicSpeedTracker.at, nicSpeedTracker.primed
+	nicSpeedTracker.up, nicSpeedTracker.down, nicSpeedTracker.at = currentUp, currentDown, now
+	nicSpeedTracker.primed = true
+	lastUp, lastDown := nicSpeedTracker.lastUpSpeed, nicSpeedTracker.lastDownSpeed
+	nicSpeedTracker.mu.Unlock()
 
-	// 获取第二次网络IO计数器
-	ioCounters2, err := net.IOCounters(true)
-	if err != nil {
-		return 0, 0, 0, 0, fmt.Errorf("failed to get network IO counters: %w", err)
+	totalUp, totalDown = currentUp, currentDown
+
+	if !primed || prevAt.IsZero() {
+		return totalUp, totalDown, 0, 0, nil
 	}
 
-	if len(ioCounters2) == 0 {
-		return 0, 0, 0, 0, fmt.Errorf("no network interfaces found")
+	elapsed := now.Sub(prevAt).Seconds()
+	// 计数器回绕、网卡重置或间隔过长时跳过本次速率计算。
+	if elapsed <= 0 || elapsed > 10*60 || currentUp < prevUp || currentDown < prevDown {
+		return totalUp, totalDown, lastUp, lastDown, nil
 	}
 
-	// 统计第二次所有非回环接口的流量
-	var totalUp2, totalDown2 uint64
-	for _, interfaceStats := range ioCounters2 {
-		if shouldInclude(interfaceStats.Name, includeNics, excludeNics) {
-			totalUp2 += interfaceStats.BytesSent
-			totalDown2 += interfaceStats.BytesRecv
-		}
-	}
+	upSpeed = uint64(float64(currentUp-prevUp) / elapsed)
+	downSpeed = uint64(float64(currentDown-prevDown) / elapsed)
 
-	// 计算速度 (每秒的速率)
-	upSpeed = totalUp2 - totalUp1
-	downSpeed = totalDown2 - totalDown1
+	nicSpeedTracker.mu.Lock()
+	nicSpeedTracker.lastUpSpeed = upSpeed
+	nicSpeedTracker.lastDownSpeed = downSpeed
+	nicSpeedTracker.mu.Unlock()
 
-	return totalUp2, totalDown2, upSpeed, downSpeed, nil
+	return totalUp, totalDown, upSpeed, downSpeed, nil
 }
 
 func parseNics(nics string) map[string]struct{} {

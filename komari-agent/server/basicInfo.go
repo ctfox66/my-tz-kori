@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/komari-monitor/komari-agent/dnsresolver"
@@ -37,27 +38,97 @@ func UpdateBasicInfo() {
 		log.Println("Basic info uploaded successfully")
 	}
 }
-func uploadBasicInfo() error {
-	cpu := monitoring.Cpu()
 
-	osname := monitoring.OSName()
-	kernelVersion := monitoring.KernelVersion()
+// staticInfo caches the values that never change for the lifetime of the host.
+// Building them on every report forced a CPU probe, a full disk partition scan
+// and an outbound IP lookup once per interval, which showed up as periodic CPU
+// spikes. They are now collected once and reused.
+type basicStaticInfo struct {
+	cpuName          string
+	cpuCores         int
+	cpuPhysicalCores int
+	arch             string
+	os               string
+	kernelVersion    string
+	memTotal         uint64
+	swapTotal        uint64
+	diskTotal        uint64
+	gpuName          string
+	virtualization   string
+}
+
+var (
+	staticInfoOnce sync.Once
+	staticInfo     basicStaticInfo
+)
+
+func getStaticInfo() basicStaticInfo {
+	staticInfoOnce.Do(func() {
+		cpuInfo := monitoring.CpuInfoStatic()
+		staticInfo = basicStaticInfo{
+			cpuName:          cpuInfo.CPUName,
+			cpuCores:         cpuInfo.CPUCores,
+			cpuPhysicalCores: cpuInfo.CPUPhysicalCores,
+			arch:             cpuInfo.CPUArchitecture,
+			os:               monitoring.OSName(),
+			kernelVersion:    monitoring.KernelVersion(),
+			memTotal:         monitoring.Ram().Total,
+			swapTotal:        monitoring.Swap().Total,
+			diskTotal:        monitoring.Disk().Total,
+			gpuName:          monitoring.GpuName(),
+			virtualization:   monitoring.Virtualized(),
+		}
+	})
+	return staticInfo
+}
+
+// ipCache caches the resolved public IP addresses so that an unchanged host does
+// not trigger an outbound lookup on every report.
+type basicIPInfo struct {
+	sync.Mutex
+	ipv4    string
+	ipv6    string
+	fetched time.Time
+	primed  bool
+}
+
+var ipInfoCache = &basicIPInfo{}
+
+const ipCacheTTL = time.Hour
+
+func getIPAddresses(force bool) (string, string) {
+	ipInfoCache.Lock()
+	defer ipInfoCache.Unlock()
+
+	if !force && ipInfoCache.primed && time.Since(ipInfoCache.fetched) < ipCacheTTL {
+		return ipInfoCache.ipv4, ipInfoCache.ipv6
+	}
+
 	ipv4, ipv6, _ := monitoring.GetIPAddress()
+	ipInfoCache.ipv4, ipInfoCache.ipv6 = ipv4, ipv6
+	ipInfoCache.fetched = time.Now()
+	ipInfoCache.primed = true
+	return ipv4, ipv6
+}
+
+func uploadBasicInfo() error {
+	static := getStaticInfo()
+	ipv4, ipv6 := getIPAddresses(false)
 
 	data := map[string]interface{}{
-		"cpu_name":           cpu.CPUName,
-		"cpu_cores":          cpu.CPUCores,
-		"cpu_physical_cores": cpu.CPUPhysicalCores,
-		"arch":               cpu.CPUArchitecture,
-		"os":                 osname,
-		"kernel_version":     kernelVersion,
+		"cpu_name":           static.cpuName,
+		"cpu_cores":          static.cpuCores,
+		"cpu_physical_cores": static.cpuPhysicalCores,
+		"arch":               static.arch,
+		"os":                 static.os,
+		"kernel_version":     static.kernelVersion,
 		"ipv4":               ipv4,
 		"ipv6":               ipv6,
-		"mem_total":          monitoring.Ram().Total,
-		"swap_total":         monitoring.Swap().Total,
-		"disk_total":         monitoring.Disk().Total,
-		"gpu_name":           monitoring.GpuName(),
-		"virtualization":     monitoring.Virtualized(),
+		"mem_total":          static.memTotal,
+		"swap_total":         static.swapTotal,
+		"disk_total":         static.diskTotal,
+		"gpu_name":           static.gpuName,
+		"virtualization":     static.virtualization,
 		"version":            update.CurrentVersion,
 	}
 
