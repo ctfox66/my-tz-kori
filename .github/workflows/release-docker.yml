@@ -78,6 +78,11 @@ jobs:
     needs: [version, build-frontend]
     runs-on: ubuntu-latest
     steps:
+      # The composite actions live in this repo, so check it out first; the server
+      # source goes to a subdirectory and is it that gets compiled.
+      - name: Checkout integration repo
+        uses: actions/checkout@v4
+
       - name: Checkout server source
         uses: actions/checkout@v4
         with:
