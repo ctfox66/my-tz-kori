@@ -1,12 +1,30 @@
-name: Publish Docker Image Manually
+name: Publish Docker Image
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: Docker image tag and embedded version.
+        description: Server version label embedded in the binary and used as the image tag (e.g. 1.2.5-fix2).
         required: true
         type: string
+      server-ref:
+        description: my-tz-kori-server ref to build (branch, tag or SHA). Empty means its default branch.
+        required: false
+        default: ""
+        type: string
+      frontend-ref:
+        description: my-tz-kori-web ref to embed (branch, tag or SHA). Empty means its default branch.
+        required: false
+        default: ""
+        type: string
+      publish-latest:
+        description: Also move the `latest` tag to this image.
+        required: false
+        default: false
+        type: boolean
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: read
@@ -15,35 +33,67 @@ permissions:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  SERVER_REPO: ctfox66/my-tz-kori-server
+  FRONTEND_REPO: ctfox66/my-tz-kori-web
 
 jobs:
-  build-frontend:
+  version:
     runs-on: ubuntu-latest
-
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      publish_latest: ${{ steps.v.outputs.publish_latest }}
     steps:
-      - name: Checkout code
+      - name: Resolve version and latest policy
+        id: v
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+            LATEST="${{ inputs.publish-latest }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+            LATEST="false"
+            if [ "${VERSION}" = "1.2.5-fix2" ]; then LATEST="true"; fi
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "publish_latest=${LATEST}" >> "$GITHUB_OUTPUT"
+          echo "Building version ${VERSION}, latest=${LATEST}"
+
+  build-frontend:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout integration repo
         uses: actions/checkout@v4
 
-      - name: Build frontend artifact
+      - name: Build frontend artifact from my-tz-kori-web
         uses: ./.github/actions/build-frontend
         with:
+          repository: ${{ env.FRONTEND_REPO }}
+          ref: ${{ inputs.frontend-ref }}
           artifact-name: komari-frontend
 
   build-docker-binaries:
-    needs: build-frontend
+    needs: [version, build-frontend]
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
+      - name: Checkout server source
         uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SERVER_REPO }}
+          ref: ${{ inputs.server-ref }}
+          path: server
 
       - name: Restore frontend artifact
         uses: ./.github/actions/restore-frontend
+        with:
+          target-dir: server/web/public/defaultTheme
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.23"
+          go-version: "1.24"
 
       - name: Install Zig
         uses: ./.github/actions/setup-zig
@@ -53,16 +103,16 @@ jobs:
           GOOS: linux
           CGO_ENABLED: 1
           GIN_MODE: release
-          VERSION: ${{ github.event.inputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          VERSION_HASH="${{ github.sha }}"
+          VERSION_HASH="$(git -C server rev-parse HEAD)"
           LDFLAGS="-s -w -X github.com/komari-monitor/komari/utils.CurrentVersion=${VERSION} -X github.com/komari-monitor/komari/utils.VersionHash=${VERSION_HASH}"
 
           echo "Building for linux/amd64..."
-          (cd komari && GOARCH=amd64 CC="zig cc -target x86_64-linux-musl" go build -trimpath -ldflags="$LDFLAGS" -o ../komari-linux-amd64)
+          (cd server && GOARCH=amd64 CC="zig cc -target x86_64-linux-musl" go build -trimpath -ldflags="$LDFLAGS" -o ../komari-linux-amd64)
 
           echo "Building for linux/arm64..."
-          (cd komari && GOARCH=arm64 CC="zig cc -target aarch64-linux-musl" go build -trimpath -ldflags="$LDFLAGS" -o ../komari-linux-arm64)
+          (cd server && GOARCH=arm64 CC="zig cc -target aarch64-linux-musl" go build -trimpath -ldflags="$LDFLAGS" -o ../komari-linux-arm64)
 
       - name: Upload Docker binaries
         uses: actions/upload-artifact@v4
@@ -71,12 +121,8 @@ jobs:
           path: komari-linux-*
 
   build-and-push-multi-arch:
-    needs: build-docker-binaries
+    needs: [version, build-docker-binaries]
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -100,14 +146,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=${{ github.event.inputs.version }}
-            type=raw,value=latest
+      - name: Compute short sha
+        id: sha
+        shell: bash
+        run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -115,7 +157,21 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ steps.sha.outputs.short }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.version.outputs.version }}
           no-cache: true
           provenance: false
+
+      - name: Repoint latest
+        if: ${{ needs.version.outputs.publish_latest == 'true' }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          docker buildx imagetools create \
+            --tag "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.version.outputs.version }}"

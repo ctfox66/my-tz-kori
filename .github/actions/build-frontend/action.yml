@@ -1,10 +1,16 @@
 name: Build frontend theme
-description: Build the pinned 1.2.5-fix2 frontend source and optionally upload it as an artifact.
+description: Build the default theme from my-tz-kori-web and place it in the server's embed directory.
 
 inputs:
   node-version:
-    description: Node.js version used to build komari-web.
+    description: Node.js version used to build the frontend.
     default: "22"
+  repository:
+    description: Frontend (theme) repository URL.
+    default: https://github.com/ctfox66/my-tz-kori-web
+  ref:
+    description: Frontend repository ref (branch, tag or commit SHA). Empty means its default branch.
+    default: ""
   artifact-name:
     description: Optional artifact name for the packed frontend theme.
     default: ""
@@ -12,40 +18,46 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Checkout frontend source
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.repository }}
+        ref: ${{ inputs.ref }}
+        path: komari-web
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: ${{ inputs.node-version }}
 
-    - name: Install frontend dependencies
+    - name: Build frontend
       shell: bash
+      working-directory: komari-web
       run: |
         set -euxo pipefail
-        cd komari-web
         npm install --no-audit --no-fund --legacy-peer-deps
+        npm run build
 
-    - name: Build pinned frontend
+    - name: Pack theme directory
       shell: bash
       run: |
         set -euxo pipefail
-        cd komari-web
-        npm run build
-        cd ..
-        mkdir -p komari/web/public/defaultTheme/dist
-        rm -rf komari/web/public/defaultTheme/dist/*
-        cp -r komari-web/dist/* komari/web/public/defaultTheme/dist/
-        cp -f komari-web/komari-theme.json komari/web/public/defaultTheme/
-        if [ -f komari-web/preview.png ]; then cp -f komari-web/preview.png komari/web/public/defaultTheme/; fi
-        if [ -f komari-web/perview.png ]; then cp -f komari-web/perview.png komari/web/public/defaultTheme/; fi
-        if [ -f komari/web/public/defaultTheme/preview.png ] && [ ! -f komari/web/public/defaultTheme/perview.png ]; then cp -f komari/web/public/defaultTheme/preview.png komari/web/public/defaultTheme/perview.png; fi
-        if [ -f komari/web/public/defaultTheme/perview.png ] && [ ! -f komari/web/public/defaultTheme/preview.png ]; then cp -f komari/web/public/defaultTheme/perview.png komari/web/public/defaultTheme/preview.png; fi
+        THEME_DIR="$RUNNER_TEMP/komari-theme"
+        rm -rf "$THEME_DIR"
+        mkdir -p "$THEME_DIR/dist"
+        cp -r komari-web/dist/* "$THEME_DIR/dist/"
+        cp -f komari-web/komari-theme.json "$THEME_DIR/"
+        if [ -f komari-web/preview.png ]; then cp -f komari-web/preview.png "$THEME_DIR/"; fi
+        if [ -f komari-web/perview.png ]; then cp -f komari-web/perview.png "$THEME_DIR/"; fi
+        if [ -f "$THEME_DIR/preview.png" ] && [ ! -f "$THEME_DIR/perview.png" ]; then cp -f "$THEME_DIR/preview.png" "$THEME_DIR/perview.png"; fi
+        if [ -f "$THEME_DIR/perview.png" ] && [ ! -f "$THEME_DIR/preview.png" ]; then cp -f "$THEME_DIR/perview.png" "$THEME_DIR/preview.png"; fi
 
     - name: Pack frontend artifact
       if: ${{ inputs.artifact-name != '' }}
       shell: bash
       run: |
         set -euxo pipefail
-        tar -czf "$RUNNER_TEMP/${{ inputs.artifact-name }}.tar.gz" -C komari/web/public/defaultTheme .
+        tar -czf "$RUNNER_TEMP/${{ inputs.artifact-name }}.tar.gz" -C "$RUNNER_TEMP/komari-theme" .
 
     - name: Upload frontend artifact
       if: ${{ inputs.artifact-name != '' }}
